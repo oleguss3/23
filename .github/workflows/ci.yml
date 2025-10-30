@@ -1,0 +1,41 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '11'
+
+      - name: Ensure SUT jar exists
+        run: |
+          test -f artifacts/app-mbank.jar || (echo "app-mbank.jar not found" && exit 1)
+
+      - name: Start SUT
+        run: |
+          nohup java -jar artifacts/app-mbank.jar > sut.log 2>&1 &
+          echo "Waiting for port 9999..."
+          for i in {1..60}; do
+            nc -z localhost 9999 && echo "SUT started" && break
+            sleep 1
+          done
+          nc -z localhost 9999 || (echo "SUT failed to start" && tail -n 20 sut.log && exit 1)
+
+      - name: Run tests
+        run: ./gradlew clean test --info --stacktrace
+
+      - name: Show SUT log if tests fail
+        if: failure()
+        run: |
+          echo "===== SUT LOG ====="
+          tail -n +1 sut.log || true
